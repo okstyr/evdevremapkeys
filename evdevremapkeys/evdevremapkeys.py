@@ -255,7 +255,6 @@ def find_input(device):
         return input
     return None
 
-
 def register_device(device):
     input = find_input(device)
     if input is None:
@@ -298,9 +297,60 @@ def shutdown(loop):
     yield from asyncio.gather(*tasks, return_exceptions=True)
     loop.stop()
 
+def extract_capabilities(device):
+    input = find_input(device)
+    if input is None:
+        raise NameError("Can't find input device")
+    #input.grab()
+
+    caps = input.capabilities()
+    pprint("== extract capabilities ==========")
+    pprint(type(caps))
+    pprint(caps)
+    # EV_SYN is automatically added to uinput devices
+    del caps[ecodes.EV_SYN]
+
+    remappings = device['remappings']
+    extended = set(caps[ecodes.EV_KEY])
+
+    modifier_groups = []
+    if 'modifier_groups' in device:
+        modifier_groups = device['modifier_groups']
+
+    def flatmap(lst):
+        return [l2 for l1 in lst for l2 in l1]
+
+    for remapping in flatmap(remappings.values()):
+        if 'code' in remapping:
+            extended.update([remapping['code']])
+
+    for group in modifier_groups:
+        for remapping in flatmap(modifier_groups[group].values()):
+            if 'code' in remapping:
+                extended.update([remapping['code']])
+
+    caps[ecodes.EV_KEY] = list(extended)
+    pprint(caps)
+    return caps
+
+def combine_capabilities(devices):
+    combined_caps = dict()
+    for device in devices:
+        output_name = device['output_name']
+        pprint(output_name)
+        # this is where we need to do a merge
+        #old_caps = capses[output_name]
+        new_caps = extract_capabilities(device)
+        combined_caps[output_name] = new_caps
+    return combined_caps
 
 def run_loop(args):
     config = load_config(args.config_file)
+
+    all_capses = combine_capabilities(config['devices'])
+
+    pprint(all_capses)
+
     for device in config['devices']:
         register_device(device)
 
