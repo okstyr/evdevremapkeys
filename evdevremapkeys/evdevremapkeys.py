@@ -306,10 +306,33 @@ def merge_capabilities(old_caps, new_caps):
     pprint(merged_keys)
     merged[ecodes.EV_KEY] = merged_keys
     # merge rel
+    merged_rel = list(set(old_caps.get(ecodes.EV_REL,[]) + new_caps.get(ecodes.EV_REL,[])))
+    pprint(merged_rel)
+    merged[ecodes.EV_REL] = merged_rel
     # merge abs
     # merge other?
     pprint(merged)
     return merged
+
+def extend_capabilities(device, caps):
+    remappings = device['remappings']
+    modifier_groups = []
+    if 'modifier_groups' in device:
+        modifier_groups = device['modifier_groups']
+
+    def flatmap(lst):
+        return [l2 for l1 in lst for l2 in l1]
+
+    for remapping in flatmap(remappings.values()):
+        if 'code' in remapping:
+            caps.update([remapping['code']])
+
+    for group in modifier_groups:
+        for remapping in flatmap(modifier_groups[group].values()):
+            if 'code' in remapping:
+                caps.update([remapping['code']])
+    return caps
+   
 
 def extract_capabilities(device):
     input = find_input(device)
@@ -324,28 +347,14 @@ def extract_capabilities(device):
     # EV_SYN is automatically added to uinput devices
     del caps[ecodes.EV_SYN]
     
-    remappings = device['remappings']
-    extended = set(caps[ecodes.EV_KEY])
     # TODO
     # this is where we have to start looking at EV_REL and EV_ABS
     # we have to do all the next 14 or so lines for each
-    modifier_groups = []
-    if 'modifier_groups' in device:
-        modifier_groups = device['modifier_groups']
-
-    def flatmap(lst):
-        return [l2 for l1 in lst for l2 in l1]
-
-    for remapping in flatmap(remappings.values()):
-        if 'code' in remapping:
-            extended.update([remapping['code']])
-
-    for group in modifier_groups:
-        for remapping in flatmap(modifier_groups[group].values()):
-            if 'code' in remapping:
-                extended.update([remapping['code']])
-
-    caps[ecodes.EV_KEY] = list(extended)
+    
+    extended_key = extend_capabilities(device, set(caps[ecodes.EV_KEY]))
+    extended_rel = extend_capabilities(device, set(caps[ecodes.EV_REL]))
+    #caps[ecodes.EV_KEY] = list(extended_key)
+    caps[ecodes.EV_REL] = list(extended_rel)
     pprint(caps)
     return caps
 
