@@ -326,7 +326,9 @@ def extract_capabilities(device):
     
     remappings = device['remappings']
     extended = set(caps[ecodes.EV_KEY])
-
+    # TODO
+    # this is where we have to start looking at EV_REL and EV_ABS
+    # we have to do all the next 14 or so lines for each
     modifier_groups = []
     if 'modifier_groups' in device:
         modifier_groups = device['modifier_groups']
