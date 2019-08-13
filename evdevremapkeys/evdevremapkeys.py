@@ -255,7 +255,7 @@ def find_input(device):
         return input
     return None
 
-def register_device(device):
+def register_device(device, caps, output_device):
     input = find_input(device)
     if input is None:
         raise NameError("Can't find input device")
@@ -266,27 +266,13 @@ def register_device(device):
     del caps[ecodes.EV_SYN]
 
     remappings = device['remappings']
-    extended = set(caps[ecodes.EV_KEY])
 
     modifier_groups = []
     if 'modifier_groups' in device:
         modifier_groups = device['modifier_groups']
 
-    def flatmap(lst):
-        return [l2 for l1 in lst for l2 in l1]
-
-    for remapping in flatmap(remappings.values()):
-        if 'code' in remapping:
-            extended.update([remapping['code']])
-
-    for group in modifier_groups:
-        for remapping in flatmap(modifier_groups[group].values()):
-            if 'code' in remapping:
-                extended.update([remapping['code']])
-
-    caps[ecodes.EV_KEY] = list(extended)
-    output = UInput(caps, name=device['output_name'])
-    asyncio.ensure_future(handle_events(input, output, remappings, modifier_groups))
+#    output = UInput(caps, name=device['output_name'])
+    asyncio.ensure_future(handle_events(input, output_device, remappings, modifier_groups))
 
 
 @asyncio.coroutine
@@ -310,6 +296,9 @@ def merge_capabilities(old_caps, new_caps):
     pprint(merged_rel)
     merged[ecodes.EV_REL] = merged_rel
     # merge abs
+    merged_abs = list(set(old_caps.get(ecodes.EV_ABS,[]) + new_caps.get(ecodes.EV_ABS,[])))
+    pprint(merged_abs)
+    merged[ecodes.EV_ABS] = merged_abs
     # merge other?
     pprint(merged)
     return merged
@@ -346,15 +335,13 @@ def extract_capabilities(device):
     pprint(caps)
     # EV_SYN is automatically added to uinput devices
     del caps[ecodes.EV_SYN]
-    
-    # TODO
-    # this is where we have to start looking at EV_REL and EV_ABS
-    # we have to do all the next 14 or so lines for each
-    
-    extended_key = extend_capabilities(device, set(caps[ecodes.EV_KEY]))
-    extended_rel = extend_capabilities(device, set(caps[ecodes.EV_REL]))
-    #caps[ecodes.EV_KEY] = list(extended_key)
-    caps[ecodes.EV_REL] = list(extended_rel)
+
+    if ecodes.EV_KEY in caps:
+        caps[ecodes.EV_KEY] = list(extend_capabilities(device, set(caps[ecodes.EV_KEY])))
+    if ecodes.EV_REL in caps:
+        caps[ecodes.EV_REL] = list(extend_capabilities(device, set(caps[ecodes.EV_REL])))
+    if ecodes.EV_ABS in caps:
+        caps[ecodes.EV_ABS] = list(extend_capabilities(device, set(caps[ecodes.EV_ABS])))
     pprint(caps)
     return caps
 
@@ -373,6 +360,16 @@ def combine_capabilities(devices):
     
     return combined_caps
 
+def build_outputs(config, caps):
+    # this is a crappy way to do it
+    outputs = dict()
+    for device in config['devices']:
+        output_name = device['output_name']
+        print(output_name)
+        if output_name not in outputs:
+            outputs[output_name] = UInput(caps[output_name], name=device['output_name'])
+    return outputs
+
 def run_loop(args):
     config = load_config(args.config_file)
 
@@ -381,8 +378,10 @@ def run_loop(args):
     pprint("== run loop =====================")
     pprint(all_capses)
 
+    outputs = build_outputs(config, all_capses)
+
     for device in config['devices']:
-        register_device(device)
+        register_device(device, all_capses[device['output_name']], outputs[device['output_name']])
 
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGTERM,
@@ -456,4 +455,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
