@@ -255,24 +255,20 @@ def find_input(device):
         return input
     return None
 
-def register_device(device, caps, output_device):
-    input = find_input(device)
-    if input is None:
-        raise NameError("Can't find input device")
-    input.grab()
+def register_devices(devices, output_devices):
+    for device in devices:    
+        input = find_input(device)
+        if input is None:
+            raise NameError("Can't find input device")
+        input.grab()
 
-    caps = input.capabilities()
-    # EV_SYN is automatically added to uinput devices
-    del caps[ecodes.EV_SYN]
+        remappings = device['remappings']
 
-    remappings = device['remappings']
+        modifier_groups = []
+        if 'modifier_groups' in device:
+            modifier_groups = device['modifier_groups']
 
-    modifier_groups = []
-    if 'modifier_groups' in device:
-        modifier_groups = device['modifier_groups']
-
-#    output = UInput(caps, name=device['output_name'])
-    asyncio.ensure_future(handle_events(input, output_device, remappings, modifier_groups))
+        asyncio.ensure_future(handle_events(input, output_devices[device['output_name']], remappings, modifier_groups))
 
 
 @asyncio.coroutine
@@ -283,27 +279,7 @@ def shutdown(loop):
     yield from asyncio.gather(*tasks, return_exceptions=True)
     loop.stop()
 
-def merge_capabilities(old_caps, new_caps):
-    merged=dict()
-    pprint("== merge capabilities ============")
-    
-    # merge key
-    merged_keys = list(set(old_caps.get(ecodes.EV_KEY,[]) + new_caps.get(ecodes.EV_KEY,[])))
-    pprint(merged_keys)
-    merged[ecodes.EV_KEY] = merged_keys
-    # merge rel
-    merged_rel = list(set(old_caps.get(ecodes.EV_REL,[]) + new_caps.get(ecodes.EV_REL,[])))
-    pprint(merged_rel)
-    merged[ecodes.EV_REL] = merged_rel
-    # merge abs
-    merged_abs = list(set(old_caps.get(ecodes.EV_ABS,[]) + new_caps.get(ecodes.EV_ABS,[])))
-    pprint(merged_abs)
-    merged[ecodes.EV_ABS] = merged_abs
-    # merge other?
-    pprint(merged)
-    return merged
-
-def extend_capabilities(device, caps):
+def apply_remappings(device, caps):
     remappings = device['remappings']
     modifier_groups = []
     if 'modifier_groups' in device:
@@ -321,9 +297,10 @@ def extend_capabilities(device, caps):
             if 'code' in remapping:
                 caps.update([remapping['code']])
     return caps
-   
 
-def extract_capabilities(device):
+# return the remapped capabilities of an input
+def input_capabilities(device):
+    # i hate doing this twice - need to add it to the dict i think
     input = find_input(device)
     if input is None:
         raise NameError("Can't find input device")
@@ -331,39 +308,58 @@ def extract_capabilities(device):
 
     caps = input.capabilities()
     pprint("== extract capabilities ==========")
-    pprint(type(caps))
     pprint(caps)
     # EV_SYN is automatically added to uinput devices
     del caps[ecodes.EV_SYN]
 
-    if ecodes.EV_KEY in caps:
-        caps[ecodes.EV_KEY] = list(extend_capabilities(device, set(caps[ecodes.EV_KEY])))
-    if ecodes.EV_REL in caps:
-        caps[ecodes.EV_REL] = list(extend_capabilities(device, set(caps[ecodes.EV_REL])))
-    if ecodes.EV_ABS in caps:
-        caps[ecodes.EV_ABS] = list(extend_capabilities(device, set(caps[ecodes.EV_ABS])))
+    for event_type in (ecodes.EV_KEY, ecodes.EV_REL, ecodes.EV_ABS):
+        if event_type in caps:
+            caps[event_type] = list(apply_remappings(device, set(caps[event_type])))
+
     pprint(caps)
     return caps
 
-def combine_capabilities(devices):
+def merge_capabilities(old_caps, new_caps):
+    merged=dict()
+    pprint("== merge capabilities ============")
+    
+    #TODO merge these pairs of lines into 1
+    
+    # merge key
+    merged_keys = list(set(old_caps.get(ecodes.EV_KEY,[]) + new_caps.get(ecodes.EV_KEY,[])))
+    merged[ecodes.EV_KEY] = merged_keys
+    # merge rel
+    merged_rel = list(set(old_caps.get(ecodes.EV_REL,[]) + new_caps.get(ecodes.EV_REL,[])))
+    merged[ecodes.EV_REL] = merged_rel
+    # merge abs
+    # this will have to do more (or maybe just rely on remapping?)
+    merged_abs = list(set(old_caps.get(ecodes.EV_ABS,[]) + new_caps.get(ecodes.EV_ABS,[])))
+    merged[ecodes.EV_ABS] = merged_abs
+    # merge other?
+    pprint(merged)
+    return merged
+
+# define the capabilities of our new outputs
+def output_capabilities(devices):
     combined_caps = dict()
     for device in devices:
         output_name = device['output_name']
-        pprint(output_name)
 
         old_caps=dict()
         if output_name in combined_caps:
             old_caps=combined_caps[output_name]
 
-        new_caps = extract_capabilities(device)
+        new_caps = input_capabilities(device)
         combined_caps[output_name] = merge_capabilities(old_caps, new_caps)
     
     return combined_caps
 
-def build_outputs(config, caps):
-    # this is a crappy way to do it
+# build a dict of all the outputs that need to be registered
+# if two devices have the same output, the one output will be created
+# that both devices will use
+def build_outputs(devices, caps):
     outputs = dict()
-    for device in config['devices']:
+    for device in devices:
         output_name = device['output_name']
         print(output_name)
         if output_name not in outputs:
@@ -372,16 +368,11 @@ def build_outputs(config, caps):
 
 def run_loop(args):
     config = load_config(args.config_file)
+    devices = config['devices']
 
-    all_capses = combine_capabilities(config['devices'])
-
-    pprint("== run loop =====================")
-    pprint(all_capses)
-
-    outputs = build_outputs(config, all_capses)
-
-    for device in config['devices']:
-        register_device(device, all_capses[device['output_name']], outputs[device['output_name']])
+    all_caps = output_capabilities(devices)
+    output_devices = build_outputs(devices, all_caps)
+    register_devices(devices, output_devices)
 
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGTERM,
