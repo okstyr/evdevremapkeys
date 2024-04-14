@@ -400,9 +400,11 @@ def run_loop(args):
 
 #oki load_device_alias_config goes here
     config = load_config(args.config_file)
+    device_aliases = load_device_alias_config(args.alias_file, args.config_file)
     tasks: Iterable[asyncio.Task] = []
     pprint.pp('debug: devices')
     pprint.pp(config['devices'])
+    pprint.pp(device_aliases)
     for device in config['devices']:
         task = register_device(device, loop)
         if task:
