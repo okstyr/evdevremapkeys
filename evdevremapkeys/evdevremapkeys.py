@@ -36,6 +36,9 @@ import pyudev
 from xdg import BaseDirectory
 import yaml
 
+#oki
+import pprint
+
 DEFAULT_RATE = .1  # seconds
 repeat_tasks = {}
 remapped_tasks = {}
@@ -166,23 +169,54 @@ def remap_event(output, event, event_remapping):
 #        'mod1': { -- is the same as 'remappings' --}
 #    }
 #  }]
-def load_config(config_override):
+
+# Get the dir where our config should be
+
+# oki check failure modes for this
+def get_config_file_path(config_override):
     conf_path = None
     if config_override is None:
+        pprint.pp('sdfsd')
         for dir in BaseDirectory.load_config_paths('evdevremapkeys'):
             conf_path = Path(dir) / 'config.yaml'
+            pprint.pp(conf_path)
             if conf_path.is_file():
-                break
-        if conf_path is None:
-            raise NameError('No config.yaml found')
+               return conf_path
+        raise NameError('Default config file (config.yaml) not found')
     else:
         conf_path = Path(config_override)
-        if not conf_path.is_file():
-            raise NameError('Cannot open %s' % config_override)
+        if conf_path.is_file():
+            return conf_path
+        else:
+            raise NameError('Cannot find config file (%s)' % conf_path)
+
+# will open either config file or alias file
+def open_yaml(file_path):
+    conf_path = Path(file_path)
+    if not conf_path.is_file():
+       raise NameError('Cannot open %s' % file_path)
 
     with open(conf_path.as_posix(), 'r') as fd:
         config = yaml.safe_load(fd)
-        return parse_config(config)
+        if config is None:
+            raise NameError('Cannot read file (%s)' % conf_path)
+        return config
+
+def load_config(config_override):
+    config_path = get_config_file_path(config_override)
+    return open_yaml(config_path) 
+
+def load_device_alias_config(device_alias_override, config_override):
+    if device_alias_override is None:
+        config_path = get_config_file_path(config_override)
+        device_alias_path = config_path.parent / 'device-aliases.yaml'
+        # no error checking as this does not have to exist
+        return device_alias_path
+    else:
+        if Path(device_alias_override).is_file:
+            return open_yaml(device_alias_override)
+        else:
+            raise NameError('%s does not exist' % device_alias_override)
 
 
 def parse_config(config):
@@ -248,15 +282,26 @@ def resolve_ecodes(by_name):
     return {ecodes.ecodes[key]: list(map(resolve_mapping, mappings))
             for key, mappings in by_name.items()}
 
+def get_alias(alias):
+  # load alias file
+  # search for alias
+  # return contents of alias in file else None
+  pprint.pp('get_alias')
 
 def find_input(device):
-    name = device.get('input_name', None)
-    phys = device.get('input_phys', None)
-    fn = device.get('input_fn', None)
+    aliased = device.get('device_alias', None)
+    if aliased is None:
+      name = device.get('input_name', None)
+      phys = device.get('input_phys', None)
+      fn = device.get('input_fn', None)
+    else:
+      name = alias.get('input_name', None)
+      phys = alias.get('input_phys', None)
+      fn = alias.get('input_fn', None)
 
     if name is None and phys is None and fn is None:
         raise NameError('Devices must be identified by at least one ' +
-                        'of "input_name", "input_phys", or "input_fn"')
+                        'of "input_name", "input_phys", "input_fn", or input_alias')
 
     devices = [InputDevice(fn) for fn in evdev.list_devices()]
     for input in devices:
@@ -353,8 +398,11 @@ def run_loop(args):
 
     loop = asyncio.get_event_loop()
 
+#oki load_device_alias_config goes here
     config = load_config(args.config_file)
     tasks: Iterable[asyncio.Task] = []
+    pprint.pp('debug: devices')
+    pprint.pp(config['devices'])
     for device in config['devices']:
         task = register_device(device, loop)
         if task:
@@ -416,6 +464,8 @@ def main():
     parser = argparse.ArgumentParser(description='Re-bind keys for input devices')
     parser.add_argument('-f', '--config-file',
                         help='Config file that overrides default location')
+    parser.add_argument('-a', '--alias-file',
+                        help='Path to device alias config file')
     parser.add_argument('-l', '--list-devices', action='store_true',
                         help='List input devices by name and physical address')
     parser.add_argument('-e', '--read-events', metavar='DEVICE',
