@@ -194,7 +194,7 @@ def get_config_file_path(config_override):
 def open_yaml(file_path):
     conf_path = Path(file_path)
     if not conf_path.is_file():
-       raise NameError('Cannot open %s' % file_path)
+       raise NameError('Cannot find %s' % file_path)
 
     with open(conf_path.as_posix(), 'r') as fd:
         config = yaml.safe_load(fd)
@@ -206,14 +206,18 @@ def load_config(config_override):
     config_path = get_config_file_path(config_override)
     return open_yaml(config_path) 
 
-def load_device_alias_config(device_alias_override, config_override):
+def load_device_aliases(device_alias_override, config_override):
     if device_alias_override is None:
+        # the alias file doesnt have to exist, so we don't check for errors here
         config_path = get_config_file_path(config_override)
         device_alias_path = config_path.parent / 'device-aliases.yaml'
-        # no error checking as this does not have to exist
-        return device_alias_path
+        if Path(device_alias_path).exists():
+            return open_yaml(device_alias_path)
+        else:
+            return None
     else:
-        if Path(device_alias_override).is_file:
+        # if we have an override, then the file needs to exist
+        if Path(device_alias_override).is_file():
             return open_yaml(device_alias_override)
         else:
             raise NameError('%s does not exist' % device_alias_override)
@@ -400,7 +404,7 @@ def run_loop(args):
 
 #oki load_device_alias_config goes here
     config = load_config(args.config_file)
-    device_aliases = load_device_alias_config(args.alias_file, args.config_file)
+    device_aliases = load_device_aliases(args.alias_file, args.config_file)
     tasks: Iterable[asyncio.Task] = []
     pprint.pp('debug: devices')
     pprint.pp(config['devices'])
