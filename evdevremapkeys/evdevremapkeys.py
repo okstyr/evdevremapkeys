@@ -43,7 +43,6 @@ DEFAULT_RATE = .1  # seconds
 repeat_tasks = {}
 remapped_tasks = {}
 registered_devices = {}
-#oki add device_aliases as a global (when in rome)
 
 async def handle_events(input: InputDevice, output: UInput, remappings, modifier_groups):
     active_group = {}
@@ -288,31 +287,11 @@ def resolve_ecodes(by_name):
     return {ecodes.ecodes[key]: list(map(resolve_mapping, mappings))
             for key, mappings in by_name.items()}
 
-def get_alias(alias):
-  # search for alias
-  # return contents of alias in file else None
-  pprint.pp('get_alias')
+def find_input(device):
+    name = device.get('input_name', None)
+    phys = device.get('input_phys', None)
+    fn = device.get('input_fn', None)
 
-def find_input(device, device_aliases):
-    alias = device.get('input_alias', None)
-    pprint.pp(alias)
-    if alias is None:
-        name = device.get('input_name', None)
-        phys = device.get('input_phys', None)
-        fn = device.get('input_fn', None)
-    else:
-        #oki would this be better if i just updated the config dict?
-        alias_dets = device_aliases.get(alias)
-        pprint.pp(alias_dets)
-        if alias_dets is not None:
-            name = alias_dets.get(alias, None)
-            phys = alias_dets.get('input_phys', None)
-            fn = alias_dets.get('input_fn', None)
-        else:
-            raise KeyError('No alias defined for %s' % alias)
-    pprint.pp(phys)
-
-    pprint.pp(phys)
     if name is None and phys is None and fn is None:
         raise NameError('Devices must be identified by at least one ' +
                         'of "input_name", "input_phys", "input_fn", or input_alias')
@@ -331,12 +310,12 @@ def find_input(device, device_aliases):
     return None
 
 
-def register_device(device, device_aliases, loop: AbstractEventLoop):
+def register_device(device, loop: AbstractEventLoop):
     for value in registered_devices.values():
         if device == value['device']:
             return value['task']
 
-    input = find_input(device, device_aliases)
+    input = find_input(device)
     if input is None:
         return None
     input.grab()
@@ -386,7 +365,7 @@ async def shutdown(loop: AbstractEventLoop):
     loop.stop()
 
 
-def handle_udev_event(monitor, config, device_aliases, loop):
+def handle_udev_event(monitor, config, loop):
     count = 0
     while True:
         device = monitor.poll(0)
@@ -396,12 +375,34 @@ def handle_udev_event(monitor, config, device_aliases, loop):
 
     if count:
         for device in config['devices']:
-            register_device(device, device_aliases, loop)
+            register_device(device, loop)
 
 
 def create_shutdown_task(loop: AbstractEventLoop):
     return loop.create_task(shutdown(loop))
 
+def de_alias_config(config, device_aliases):
+    pprint.pp('de alias')
+    pprint.pp(config)
+    for device in config['devices']:
+        alias = device.get('input_alias', None)
+        if alias is not None:
+            #oki rename alias_dets
+            alias_dets = device_aliases.get(alias)
+            if alias_dets is not None:
+                name = alias_dets.get('input_name', None)
+                phys = alias_dets.get('input_phys', None)
+                fn = alias_dets.get('input_fn', None)
+            else:
+                raise KeyError('No device identifier defined for %s in device aliases file' % alias)
+            if name is not None:
+                device['input_name'] = name
+            if phys is not None:
+                device['input_phys'] = phys
+            if fn is not None:
+                device['input_fn'] = fn
+    pprint.pp ('final')
+    pprint.pp(config)
 
 def run_loop(args):
     context = pyudev.Context()
@@ -414,13 +415,15 @@ def run_loop(args):
 
     config = load_config(args.config_file)
     device_aliases = load_device_aliases(args.alias_file, args.config_file)
+    de_alias_config(config, device_aliases)
+    pprint.pp(config)
     tasks: Iterable[asyncio.Task] = []
     pprint.pp('debug: devices')
     pprint.pp(config['devices'])
     pprint.pp(device_aliases)
     for device in config['devices']:
         # oki pass in device aliases here
-        task = register_device(device, device_aliases, loop)
+        task = register_device(device, loop)
         if task:
             tasks.append(task)
 
@@ -429,7 +432,7 @@ def run_loop(args):
 
     loop.add_signal_handler(signal.SIGTERM,
                             functools.partial(create_shutdown_task, loop))
-    loop.add_reader(fd, handle_udev_event, monitor, config, device_aliases, loop)
+    loop.add_reader(fd, handle_udev_event, monitor, config, loop)
 
     try:
         loop.run_forever()
