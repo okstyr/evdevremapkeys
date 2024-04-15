@@ -1,4 +1,5 @@
-aliases:
-  - test-alias:
-    input_phys: usb-blah
+hypermouse:
+  input_phys: 'usb-0000:00:14.0-1.4/input0'
+summit:
+  inpoo: 'sdf'
 

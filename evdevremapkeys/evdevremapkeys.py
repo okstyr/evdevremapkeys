@@ -43,7 +43,7 @@ DEFAULT_RATE = .1  # seconds
 repeat_tasks = {}
 remapped_tasks = {}
 registered_devices = {}
-
+#oki add device_aliases as a global (when in rome)
 
 async def handle_events(input: InputDevice, output: UInput, remappings, modifier_groups):
     active_group = {}
@@ -191,7 +191,8 @@ def get_config_file_path(config_override):
             raise NameError('Cannot find config file (%s)' % conf_path)
 
 # will open either config file or alias file
-def open_yaml(file_path):
+def load_yaml(file_path):
+    # oki change name to yaml_path etc
     conf_path = Path(file_path)
     if not conf_path.is_file():
        raise NameError('Cannot find %s' % file_path)
@@ -204,7 +205,8 @@ def open_yaml(file_path):
 
 def load_config(config_override):
     config_path = get_config_file_path(config_override)
-    return open_yaml(config_path) 
+    config = load_yaml(config_path) 
+    return parse_config(config)
 
 def load_device_aliases(device_alias_override, config_override):
     if device_alias_override is None:
@@ -212,13 +214,13 @@ def load_device_aliases(device_alias_override, config_override):
         config_path = get_config_file_path(config_override)
         device_alias_path = config_path.parent / 'device-aliases.yaml'
         if Path(device_alias_path).exists():
-            return open_yaml(device_alias_path)
+            return load_yaml(device_alias_path)
         else:
             return None
     else:
         # if we have an override, then the file needs to exist
         if Path(device_alias_override).is_file():
-            return open_yaml(device_alias_override)
+            return load_yaml(device_alias_override)
         else:
             raise NameError('%s does not exist' % device_alias_override)
 
@@ -287,22 +289,30 @@ def resolve_ecodes(by_name):
             for key, mappings in by_name.items()}
 
 def get_alias(alias):
-  # load alias file
   # search for alias
   # return contents of alias in file else None
   pprint.pp('get_alias')
 
-def find_input(device):
-    aliased = device.get('device_alias', None)
-    if aliased is None:
-      name = device.get('input_name', None)
-      phys = device.get('input_phys', None)
-      fn = device.get('input_fn', None)
+def find_input(device, device_aliases):
+    alias = device.get('input_alias', None)
+    pprint.pp(alias)
+    if alias is None:
+        name = device.get('input_name', None)
+        phys = device.get('input_phys', None)
+        fn = device.get('input_fn', None)
     else:
-      name = alias.get('input_name', None)
-      phys = alias.get('input_phys', None)
-      fn = alias.get('input_fn', None)
+        #oki would this be better if i just updated the config dict?
+        alias_dets = device_aliases.get(alias)
+        pprint.pp(alias_dets)
+        if alias_dets is not None:
+            name = alias_dets.get(alias, None)
+            phys = alias_dets.get('input_phys', None)
+            fn = alias_dets.get('input_fn', None)
+        else:
+            raise KeyError('No alias defined for %s' % alias)
+    pprint.pp(phys)
 
+    pprint.pp(phys)
     if name is None and phys is None and fn is None:
         raise NameError('Devices must be identified by at least one ' +
                         'of "input_name", "input_phys", "input_fn", or input_alias')
@@ -321,12 +331,12 @@ def find_input(device):
     return None
 
 
-def register_device(device, loop: AbstractEventLoop):
+def register_device(device, device_aliases, loop: AbstractEventLoop):
     for value in registered_devices.values():
         if device == value['device']:
             return value['task']
 
-    input = find_input(device)
+    input = find_input(device, device_aliases)
     if input is None:
         return None
     input.grab()
@@ -376,7 +386,7 @@ async def shutdown(loop: AbstractEventLoop):
     loop.stop()
 
 
-def handle_udev_event(monitor, config, loop):
+def handle_udev_event(monitor, config, device_aliases, loop):
     count = 0
     while True:
         device = monitor.poll(0)
@@ -386,7 +396,7 @@ def handle_udev_event(monitor, config, loop):
 
     if count:
         for device in config['devices']:
-            register_device(device, loop)
+            register_device(device, device_aliases, loop)
 
 
 def create_shutdown_task(loop: AbstractEventLoop):
@@ -402,7 +412,6 @@ def run_loop(args):
 
     loop = asyncio.get_event_loop()
 
-#oki load_device_alias_config goes here
     config = load_config(args.config_file)
     device_aliases = load_device_aliases(args.alias_file, args.config_file)
     tasks: Iterable[asyncio.Task] = []
@@ -410,7 +419,8 @@ def run_loop(args):
     pprint.pp(config['devices'])
     pprint.pp(device_aliases)
     for device in config['devices']:
-        task = register_device(device, loop)
+        # oki pass in device aliases here
+        task = register_device(device, device_aliases, loop)
         if task:
             tasks.append(task)
 
@@ -419,7 +429,7 @@ def run_loop(args):
 
     loop.add_signal_handler(signal.SIGTERM,
                             functools.partial(create_shutdown_task, loop))
-    loop.add_reader(fd, handle_udev_event, monitor, config, loop)
+    loop.add_reader(fd, handle_udev_event, monitor, config, device_aliases, loop)
 
     try:
         loop.run_forever()
