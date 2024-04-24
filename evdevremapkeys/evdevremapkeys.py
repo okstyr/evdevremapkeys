@@ -134,43 +134,7 @@ def remap_event(output, event, event_remapping):
                     repeat_tasks[original_code] = asyncio.ensure_future(
                         repeat_event(event, rate, count, values, output))
 
-
-# Parses yaml config file and outputs normalized configuration.
-# Sample output:
-#  'devices': [{
-#    'input_fn': '',
-#    'input_name': '',
-#    'input_phys': '',
-#    'output_name': '',
-#    'remappings': {
-#      42: [{             # Matched key/button code
-#        'code': 30,      # Mapped key/button code
-#        'type': EV_REL,  # Overrides received event type [optional]
-#                         # Defaults to EV_KEY
-#        'value': [1, 0], # Overrides received event value [optional].
-#                         # If multiple values are specified they will
-#                         # be applied in sequence.
-#                         # Defaults to the value of received event.
-#        'repeat': True,  # Repeat key/button code [optional, default:False]
-#        'delay': True,   # Delay key/button output [optional, default:False]
-#        'rate': 0.2,     # Repeat rate in seconds [optional, default:0.1]
-#        'count': 3       # Repeat/Delay counter [optional, default:0]
-#                         # For repeat:
-#                         # If count is 0 it will repeat until key/button is depressed
-#                         # If count > 0 it will repeat specified number of times
-#                         # For delay:
-#                         # Will suppress key/button output x times before
-#                         # execution [x = count]
-#                         # Ex: count = 1 will execute key press every other time
-#      }]
-#    },
-#    'modifier_groups': {
-#        'mod1': { -- is the same as 'remappings' --}
-#    }
-#  }]
-
 # Get the dir where our config should be
-
 # oki check failure modes for this
 def get_config_file_path(config_override):
     conf_path = None
@@ -222,6 +186,40 @@ def load_device_aliases(device_alias_override, config_override):
             return load_yaml(device_alias_override)
         else:
             raise NameError('%s does not exist' % device_alias_override)
+
+# Parses yaml config file and outputs normalized configuration.
+# Sample output:
+#  'devices': [{
+#    'input_fn': '',
+#    'input_name': '',
+#    'input_phys': '',
+#    'output_name': '',
+#    'remappings': {
+#      42: [{             # Matched key/button code
+#        'code': 30,      # Mapped key/button code
+#        'type': EV_REL,  # Overrides received event type [optional]
+#                         # Defaults to EV_KEY
+#        'value': [1, 0], # Overrides received event value [optional].
+#                         # If multiple values are specified they will
+#                         # be applied in sequence.
+#                         # Defaults to the value of received event.
+#        'repeat': True,  # Repeat key/button code [optional, default:False]
+#        'delay': True,   # Delay key/button output [optional, default:False]
+#        'rate': 0.2,     # Repeat rate in seconds [optional, default:0.1]
+#        'count': 3       # Repeat/Delay counter [optional, default:0]
+#                         # For repeat:
+#                         # If count is 0 it will repeat until key/button is depressed
+#                         # If count > 0 it will repeat specified number of times
+#                         # For delay:
+#                         # Will suppress key/button output x times before
+#                         # execution [x = count]
+#                         # Ex: count = 1 will execute key press every other time
+#      }]
+#    },
+#    'modifier_groups': {
+#        'mod1': { -- is the same as 'remappings' --}
+#    }
+#  }]
 
 
 def parse_config(config):
