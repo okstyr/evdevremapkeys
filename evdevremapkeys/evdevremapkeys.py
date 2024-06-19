@@ -385,6 +385,8 @@ def de_alias_config(config, device_aliases):
     for device in config['devices']:
         alias = device.get('input_alias', None)
         if alias is not None:
+            if device_aliases is None:
+                raise NameError('device aliases file (device_aliases.yaml) does not exist')
             #oki rename alias_dets
             alias_dets = device_aliases.get(alias)
             if alias_dets is not None:
